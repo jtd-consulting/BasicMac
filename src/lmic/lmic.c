@@ -44,6 +44,9 @@ DEFINE_LMIC;
 
 // Fwd decls.
 static void engineUpdate(void);
+#if !defined(EXCLUDE_JOEHACK_DRIFT)
+ostime_t last_drift = INITIAL_D;
+#endif // !defined(EXCLUDE_JOEHACK_DRIFT)
 
 
 // ================================================================================
@@ -1118,6 +1121,9 @@ static void setBcnRxParams_dyn (void) {
 // END DYNAMIC CHANNEL PLAN REGIONS
 // ================================================================================
 
+#if !defined(EXCLUDE_JOEHACK_VALIDATE_CHANNELS)
+extern int channel_is_allowed(u1_t channel);
+#endif // !defined(EXCLUDE_JOEHACK_VALIDATE_CHANNELS)
 
 
 static void initJoinLoop (void) {
@@ -1126,10 +1132,33 @@ static void initJoinLoop (void) {
 #ifdef REG_FIX
         LMIC.refChnl = 0;
         LMIC.txChnl = LMIC.fix.hoplist[LMIC.refChnl];
+#if !defined(EXCLUDE_JOEHACK_VALIDATE_CHANNELS)
+        for(int i = 0; i < REGION.numChBlocks * 8; i++)
+        {
+          if(channel_is_allowed(LMIC.txChnl))
+          {
+            break;
+          }
+          LMIC.refChnl = (LMIC.refChnl + 1) % (REGION.numChBlocks * 8);
+          LMIC.txChnl = LMIC.fix.hoplist[LMIC.refChnl];
+        }
+        debug_printf("A. Selecting channel %u\r\n", LMIC.txChnl);
+#endif // !defined(EXCLUDE_JOEHACK_VALIDATE_CHANNELS)
         setDrJoin(DRCHG_SET, REGION.joinDr);
 #endif
     } else {
         LMIC.txChnl = 0; // XXX - join should use nextTx!
+#if !defined(EXCLUDE_JOEHACK_VALIDATE_CHANNELS)
+        for(int i = 0; i < REGION.numChBlocks * 8; i++)
+        {
+          LMIC.txChnl = i;
+          if(channel_is_allowed(LMIC.txChnl))
+          {
+            break;
+          }
+        }
+        debug_printf("B. Selecting channel %u\r\n", LMIC.txChnl);
+#endif // !defined(EXCLUDE_JOEHACK_VALIDATE_CHANNELS)
         setDrJoin(DRCHG_SET, fastest125());
     }
     LMIC.txPowAdj = 0;
@@ -1153,8 +1182,20 @@ static ostime_t nextJoinState (void) {
         if( (LMIC.refChnl % REGION.numChBlocks) == 0 ) {
             // went through all channels blocks
             if( REGION.baseFreqFix ) {
+#if defined(EXCLUDE_JOEHACK_VALIDATE_CHANNELS)
                 // try fix-DR channel
                 LMIC.txChnl = (REGION.numChBlocks * 8) + (LMIC.refChnl / REGION.numChBlocks) - 1;
+#else // !defined(EXCLUDE_JOEHACK_VALIDATE_CHANNELS)
+                for(int i = 0; i <  8; i++)
+                {
+                  LMIC.txChnl = (REGION.numChBlocks * 8) + i;
+                  if(channel_is_allowed(LMIC.txChnl))
+                  {
+                    break;
+                  }
+                }
+                debug_printf("C. Selecting channel %u\r\n", LMIC.txChnl);
+#endif // !defined(EXCLUDE_JOEHACK_VALIDATE_CHANNELS)
                 setDrJoin(DRCHG_SET, REGION.fixDr);
                 goto done;
             } else {
@@ -1166,7 +1207,20 @@ nextblock:
             }
         }
         setDrJoin(DRCHG_SET, REGION.joinDr);
+#if defined(EXCLUDE_JOEHACK_VALIDATE_CHANNELS)
         LMIC.txChnl = LMIC.fix.hoplist[LMIC.refChnl];
+#else // !defined(EXCLUDE_JOEHACK_VALIDATE_CHANNELS)
+        for(int i = 0; i < REGION.numChBlocks * 8; i++)
+        {
+          LMIC.txChnl = LMIC.fix.hoplist[LMIC.refChnl];
+          LMIC.refChnl = (LMIC.refChnl + 1) % (REGION.numChBlocks * 8);
+          if(channel_is_allowed(LMIC.txChnl))
+          {
+            break;
+          }
+        }
+        debug_printf("D. Selecting channel %u\r\n", LMIC.txChnl);
+#endif // !defined(EXCLUDE_JOEHACK_VALIDATE_CHANNELS)
 done:
         LMIC.opmode &= ~OP_NEXTCHNL;
         delay = rndDelay(32);
@@ -1462,6 +1516,13 @@ static ostime_t nextTx_fix (ostime_t now) {
                 u1_t chnl = ++LMIC.refChnl % e + off;
                 if( (LMIC.fix.channelMap[(chnl >> 4)] & (1<<(chnl & 0xF))) != 0 ) {
                     LMIC.txChnl = chnl;
+#if !defined(EXCLUDE_JOEHACK_VALIDATE_CHANNELS)
+                    if(!channel_is_allowed(LMIC.txChnl))
+                    {
+                      continue;
+                    }
+                    debug_printf("E. Selecting channel %u\r\n", LMIC.txChnl);
+#endif // !defined(EXCLUDE_JOEHACK_VALIDATE_CHANNELS)
                     break;
                 }
             }
@@ -1471,6 +1532,13 @@ static ostime_t nextTx_fix (ostime_t now) {
                 u1_t chnl = LMIC.fix.hoplist[++LMIC.refChnl % e];
                 if( (LMIC.fix.channelMap[(chnl >> 4)] & (1<<(chnl & 0xF))) != 0 ) {
                     LMIC.txChnl = chnl;
+#if !defined(EXCLUDE_JOEHACK_VALIDATE_CHANNELS)
+                    if(!channel_is_allowed(LMIC.txChnl))
+                    {
+                      continue;
+                    }
+                    debug_printf("F. Selecting channel %u\r\n", LMIC.txChnl);
+#endif // !defined(EXCLUDE_JOEHACK_VALIDATE_CHANNELS)
                     break;
                 }
             }
@@ -2136,7 +2204,11 @@ static void schedRx2 (u1_t delay, osjobcb_t func) {
         LMIC.rxtime = LMIC.txend + delay*sec2osticks(1) + dr2hsym(LMIC.dn2Dr, PAMBL_SYMS-MINRX_SYMS);
         adjustByRxdErr(delay, LMIC.dn2Dr);
     }
+#if !defined(EXCLUDE_JOEHACK_DRIFT)
+    os_setTimedCallback(&LMIC.osjob, LMIC.rxtime - RX_RAMPUP - last_drift, func);
+#else // defined(EXCLUDE_JOEHACK_DRIFT)
     os_setTimedCallback(&LMIC.osjob, LMIC.rxtime - RX_RAMPUP, func);
+#endif // defined(EXCLUDE_JOEHACK_DRIFT)
 }
 
 static void setupRx1 (osjobcb_t func) {
@@ -2168,7 +2240,11 @@ static void txDone (u1_t delay, osjobcb_t func) {
         LMIC.rxsyms = MINRX_SYMS;
         adjustByRxdErr(delay, LMIC.dndr);
     }
+#if !defined(EXCLUDE_JOEHACK_DRIFT)
+    os_setTimedCallback(&LMIC.osjob, LMIC.rxtime - RX_RAMPUP - last_drift, func);
+#else // defined(EXCLUDE_JOEHACK_DRIFT)
     os_setTimedCallback(&LMIC.osjob, LMIC.rxtime - RX_RAMPUP, func);
+#endif // defined(EXCLUDE_JOEHACK_DRIFT)
 }
 
 
@@ -2755,6 +2831,12 @@ static void buildJoinRequest (u1_t ftype) {
     d[OFF_JR_HDR] = ftype;
     os_getJoinEui(d + OFF_JR_JOINEUI);
     os_getDevEui(d + OFF_JR_DEVEUI);
+#if !defined(EXCLUDE_JOEHACK_NONCE)
+    if(ftype == HDR_FTYPE_JREQ)
+    {
+      LMIC.devNonce = 0;
+    }
+#endif // !defined(EXCLUDE_JOEHACK_NONCE)
     os_wlsbf2(d + OFF_JR_DEVNONCE, LMIC.devNonce);
     lce_addMicJoinReq(d, OFF_JR_MIC);
     LMIC.dataLen = LEN_JR;
@@ -3071,7 +3153,7 @@ static void engineUpdate (void) {
 #endif
         // Earliest possible time vs overhead to setup radio
         if( txbeg - (now + TX_RAMPUP) <= 0 ) {
-        debug_verbose_printf("Ready for uplink\r\n");
+            debug_verbose_printf("Ready for uplink\r\n");
             // We could send right now!
             txbeg = now + TX_RAMPUP;
             dr_t txdr = LMIC.datarate;

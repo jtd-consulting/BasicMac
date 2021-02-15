@@ -607,6 +607,11 @@ void     LMIC_getRxdErrInfo (s4_t* skew, u4_t* span);
 #define TRACE_ADDR(a)
 #endif
 
+#if !defined(EXCLUDE_JOEHACK_DRIFT)
+#define INITIAL_D                       (700)
+extern ostime_t last_drift;
+#endif // !defined(EXCLUDE_JOEHACK_DRIFT)
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

@@ -665,6 +665,9 @@ static void rxfsk (bool rxcontinuous) {
 
     ostime_t now = os_getTime();
     if (!rxcontinuous && LMIC.rxtime - now < 0) {
+#if !defined(EXCLUDE_JOEHACK_DRIFT)
+        last_drift += now - LMIC.rxtime;
+#endif // !defined(EXCLUDE_JOEHACK_DRIFT)
         debug_printf("WARNING: rxtime is %ld ticks in the past! (ramp-up time %ld ms / %ld ticks)\r\n",
                      now - LMIC.rxtime, osticks2ms(now - t0), now - t0);
     }
@@ -715,6 +718,9 @@ static void rxlora (bool rxcontinuous) {
     if (!rxcontinuous && LMIC.rxtime - now < 0) {
         // Print before disabling IRQs, to work around deadlock on some
         // Arduino cores that doe not really support printing without IRQs
+#if !defined(EXCLUDE_JOEHACK_DRIFT)
+        last_drift += now - LMIC.rxtime;
+#endif // !defined(EXCLUDE_JOEHACK_DRIFT)
         debug_printf("WARNING: rxtime is %ld ticks in the past! (ramp-up time %ld ms / %ld ticks)\r\n",
                      now - LMIC.rxtime, osticks2ms(now - t0), now - t0);
     }

@@ -860,6 +860,9 @@ static void rxlorasingle (void) {
     hal_enableIRQs();
     // warn about delayed rx
     if( rxtime - now < 0 ) {
+#if !defined(EXCLUDE_JOEHACK_DRIFT)
+        last_drift += now - rxtime;
+#endif // !defined(EXCLUDE_JOEHACK_DRIFT)
         debug_printf("WARNING: rxtime is %ld ticks in the past! (ramp-up time %ld ms / %ld ticks)\r\n",
                      now - rxtime, osticks2ms(now - t0), now - t0);
     }
@@ -993,6 +996,9 @@ static void rxfsk (bool rxcontinuous) {
         // busy wait until exact rx time
         ostime_t now = os_getTime();
         if (LMIC.rxtime - now < 0) {
+#if !defined(EXCLUDE_JOEHACK_DRIFT)
+            last_drift += now - LMIC.rxtime;
+#endif // !defined(EXCLUDE_JOEHACK_DRIFT)
             debug_printf("WARNING: rxtime is %ld ticks in the past! (ramp-up time %ld ms / %ld ticks)\r\n",
                          now - LMIC.rxtime, osticks2ms(now - t0), now - t0);
         }
